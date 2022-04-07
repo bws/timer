@@ -20,10 +20,10 @@
 #include <time.h>
 
 #define NUM_TIMERS 6
-#define MAX_NAME_SIZE 8
+#define MAX_NAME_SIZE 16
 
-static double* timer_begins_by_idx[NUM_TIMERS];
-static double* timer_ends_by_idx[NUM_TIMERS];
+static struct timespec* timer_begins_by_idx[NUM_TIMERS];
+static struct timespec* timer_ends_by_idx[NUM_TIMERS];
 static int timer_current_by_idx[NUM_TIMERS];
 static char timer_names[NUM_TIMERS][MAX_NAME_SIZE];
 static int timer_name_cur = 0;
@@ -32,53 +32,53 @@ static int timer_name_cur = 0;
    Initializes timer storage to hold n iterations
    @param iterations number of timer samples to support
 */
-inline int timer_init(size_t iterations);
+int timer_init(size_t iterations);
 
 /**
    Destroy timer related resources
 */
-inline int timer_destroy();
+int timer_destroy();
 
 /**
    @return the timer index associated with name
 */
-inline int timer_set_name(char* name);
+int timer_set_name(char* name);
 
 /**
    Start the timer
 */
-inline int timer_begin(int tidx);
+static inline int timer_begin(int tidx);
 
 /**
    Stop the timer
 */
-inline int timer_end(int tidx);
+static inline int timer_end(int tidx);
 
 /**
    @return the average of all times stored for timer tidx
 */
-inline double timer_get_avg(int tidx);
+double timer_get_avg(int tidx);
 
 /**
    @return the maximum of all times stored for timer tidx
 */
-inline double timer_get_max(int tidx);
+double timer_get_max(int tidx);
 
 /**
    @return the minimum of all times stored for timer tidx
 */
-inline double timer_get_min(int tidx);
+double timer_get_min(int tidx);
 
 /**
    @return the total of all times stored for timer tidx
 */
-inline double timer_get_total(int tidx);
+double timer_get_total(int tidx);
 
 /**
    Prints the timer as a TSV list
    @return 0
 */
-inline int timer_print_tsv(int tidx, bool header);
+int timer_print_tsv(int tidx, bool header);
 
 /* ------------------------ Begin Implementations --------------------- */
 
@@ -91,10 +91,10 @@ int timer_init(size_t iterations)
     snprintf(name, MAX_NAME_SIZE - 1, "%d", i);
 
     /* Create the arrays */
-    timer_begins_by_idx[i] = calloc(iterations, sizeof(double));
-    timer_ends_by_idx[i] = calloc(iterations, sizeof(double));
+    timer_begins_by_idx[i] = calloc(iterations, sizeof(struct timespec));
+    timer_ends_by_idx[i] = calloc(iterations, sizeof(struct timespec));
     timer_current_by_idx[i] = 0;
-    strncpy(timer_names[i], name, MAX_NAME_SIZE - 1);
+    strncpy(timer_names[i], name, MAX_NAME_SIZE);
   }
 
   // Use timer 0 to measure the timer overhead
@@ -130,7 +130,7 @@ int timer_set_name(char* name) {
   return timer_name_cur++;
 }
 
-double timespec_to_double(struct timespec* t)
+static double timespec_to_double(struct timespec* t)
 {
   double seconds = t->tv_sec;
   double nanos = t->tv_nsec;
@@ -139,21 +139,12 @@ double timespec_to_double(struct timespec* t)
 
 int timer_begin(int tidx)
 {
-  struct timespec n;
-  clock_gettime(CLOCK_MONOTONIC, &n);
-  double now = timespec_to_double(&n);
-  int current =  timer_current_by_idx[tidx];
-  *(timer_begins_by_idx[tidx] + current) = now;
-  return 0;
+  return clock_gettime(CLOCK_MONOTONIC, (timer_begins_by_idx[tidx] + timer_current_by_idx[tidx]));
 }
 
 int timer_end(int tidx)
 {
-  struct timespec n;
-  clock_gettime(CLOCK_MONOTONIC, &n);
-  double now = timespec_to_double(&n);
-  int current = timer_current_by_idx[tidx];
-  *(timer_ends_by_idx[tidx] + current) = now;
+  clock_gettime(CLOCK_MONOTONIC, (timer_ends_by_idx[tidx] + timer_current_by_idx[tidx]));
   timer_current_by_idx[tidx]++;
   return 0;
 }
@@ -165,9 +156,13 @@ double timer_get_avg(int tidx)
 
 double timer_get_max(int tidx)
 {
-  double max = *(timer_ends_by_idx[tidx]) - *(timer_begins_by_idx[tidx]);
+  double begin = timespec_to_double(timer_begins_by_idx[tidx]);
+  double end = timespec_to_double(timer_ends_by_idx[tidx]);
+  double max = end - begin;
   for (int i = 0; i <  timer_current_by_idx[tidx]; i++) {
-    double t = *(timer_ends_by_idx[tidx] + i) - *(timer_begins_by_idx[tidx] + i);
+    begin = timespec_to_double(timer_begins_by_idx[tidx] + i);
+    end = timespec_to_double(timer_ends_by_idx[tidx] + i);
+    double t = end - begin;
     max = (t > max ? t : max);
   }
   return max;
@@ -175,9 +170,13 @@ double timer_get_max(int tidx)
 
 double timer_get_min(int tidx)
 {
-  double min = *(timer_ends_by_idx[tidx]) - *(timer_begins_by_idx[tidx]);
+  double begin = timespec_to_double(timer_begins_by_idx[tidx]);
+  double end = timespec_to_double(timer_ends_by_idx[tidx]);  
+  double min = end - begin;
   for (int i = 0; i <  timer_current_by_idx[tidx]; i++) {
-    double t = *(timer_ends_by_idx[tidx] + i) - *(timer_begins_by_idx[tidx] + i);
+    begin = timespec_to_double(timer_begins_by_idx[tidx] + i);
+    end = timespec_to_double(timer_ends_by_idx[tidx] + i);
+    double t = end - begin;
     min = (t < min ? t : min);
   }
   return min;
@@ -185,9 +184,13 @@ double timer_get_min(int tidx)
 
 double timer_get_total(int tidx)
 {
+  double begin = timespec_to_double(timer_begins_by_idx[tidx]);
+  double end = timespec_to_double(timer_ends_by_idx[tidx]);  
   double total = 0.0;
   for (int i = 0; i <  timer_current_by_idx[tidx]; i++) {
-    total += *(timer_ends_by_idx[tidx] + i) - *(timer_begins_by_idx[tidx] + i);
+    begin = timespec_to_double(timer_begins_by_idx[tidx] + i);
+    end = timespec_to_double(timer_ends_by_idx[tidx] + i);
+    total += end - begin;
   }
   return total;
 }

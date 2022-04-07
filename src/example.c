@@ -4,7 +4,7 @@
 int main(int argc, char** argv)
 {
   const int PRINTF_TIMER = 1;
-  timer_init(1);
+  timer_init(10000);
   timer_begin(PRINTF_TIMER);
   printf("Hello World\n");
   timer_end(PRINTF_TIMER);
